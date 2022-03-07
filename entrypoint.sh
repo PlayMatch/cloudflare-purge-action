@@ -32,13 +32,56 @@ if [ -z "$CLOUDFLARE_ZONE" ]; then
   exit 1
 fi
 
+
+
+# If Paths_FROM is defined as a txt file contained files changed
+if [[ -n "$PATHS_FROM" ]]; then
+  echo "*** Reading PATHS from $PATHS_FROM"
+  if [[ ! -f  $PATHS_FROM ]]; then
+    echo "PATHS file not found."
+  else
+    PATHS=$(cat $PATHS_FROM | tr '\n' ' ')
+    echo "PATHS=$PATHS"
+    if [[ -z "$PATHS" ]]; then
+      echo "PATHS is empty."
+    fi
+  fi
+fi
+
+# Ensure we have jq-1.6 to parse the list of files to a JSON Array
+if [[ -n "$PATHS" ]]; then
+  jq="jq"
+  if  [[ ! -x "$(command -v $jq)" || "$($jq --version)" != "jq-1.6" ]]; then
+    if [[ $(uname) == "Darwin" ]]; then
+      jqbin="jq-osx-amd64"
+    elif [[ $(uname) == "Linux" ]]; then
+      jqbin="jq-linux64"
+    fi
+    if [[ -n "$jqbin" ]]; then
+      jq="/usr/local/bin/jq16"
+      wget -nv -O $jq https://github.com/stedolan/jq/releases/download/jq-1.6/$jqbin
+      chmod 755 $jq
+    fi
+  fi
+fi
+
+# Handle multiple space-separated paths, particularly containing wildcards.
+# i.e., if PATHS="/* /foo"
+if [[ -n "$PATHS" ]]; then
+  IFS=' ' read -r -a PATHS_ARR <<< "$PATHS"
+  echo -n "${PATHS}" > "./paths.txt"
+  JSON_PATHS=$($jq --null-input --compact-output --monochrome-output --rawfile inarr "./paths.txt" '$inarr | rtrimstr(" ") | rtrimstr("\n") | split(" ")')
+fi
+
+
 # If URL array is passed, only purge those. Otherwise, purge everything.
 if [ -n "$PURGE_URLS" ]; then
   set -- --data '{"files":'"${PURGE_URLS}"'}'
+elif [ -n "$JSON_PATHS" ]; then
+  set -- --data '{"files":'"${JSON_PATHS}"'}'
 else
   set -- --data '{"purge_everything":true}'
 fi
-
 
 ######## Call the API and store the response for later. ########
 
