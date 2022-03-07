@@ -65,10 +65,8 @@ if [[ -n "$PATHS" ]]; then
   fi
 fi
 
-# Handle multiple space-separated paths, particularly containing wildcards.
-# i.e., if PATHS="/* /foo"
+# Parse PATHS to a JSON Array (is necessary to create a temporary file).
 if [[ -n "$PATHS" ]]; then
-  IFS=' ' read -r -a PATHS_ARR <<< "$PATHS"
   echo -n "${PATHS}" > "./paths.txt"
   JSON_PATHS=$($jq --null-input --compact-output --monochrome-output --rawfile inarr "./paths.txt" '$inarr | rtrimstr(" ") | rtrimstr("\n") | split(" ")')
 fi
