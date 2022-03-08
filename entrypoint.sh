@@ -65,18 +65,88 @@ if [[ -n "$PATHS" ]]; then
   fi
 fi
 
+LEN=0
 # Parse PATHS to a JSON Array (is necessary to create a temporary file).
 if [[ -n "$PATHS" ]]; then
+  IFS=' ' read -r -a PATHS_ARR <<< "$PATHS"
+  LEN="${#PATHS_ARR[@]}"
   echo -n "${PATHS}" > "./paths.txt"
   JSON_PATHS=$($jq --null-input --compact-output --monochrome-output --rawfile inarr "./paths.txt" '$inarr | rtrimstr(" ") | rtrimstr("\n") | split(" ")')
+
+  # Get json size (ex: 50)
+  # echo $JSON_PATHS | jq 'length'
+
+  # cria um array limpo temporario chamado files
+  # for i de 0 até LEN
+  #   if i < 30:
+  #     push i on files
+  #   else
+  #     new request using files
+  #     clear array files
+  # do again
+
+
+  # get primeiro indice
+  # len = 50
+  # 50 / 30  = 1.66 ceil
+
+  # while
+    # startIndex = 0 endIndex = 29
+    # faz a request
+
+  for ((initialIndex = 0; initialIndex < $LEN; initialIndex += 30)); do 
+    echo "Starting the queue for the files [${initialIndex}..30+${initialIndex}]";
+    echo $JSON_PATHS | jq ".[${initialIndex}:${30+initialIndex}]";
+
+    # Code about requests 
+    set -- --data '{"files":'"${JSON_PATHS}"'}'
+
+    # Using a global API key:
+    if [ "$API_METHOD" -eq 1 ]; then
+      HTTP_RESPONSE=$(curl -sS "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE}/purge_cache" \
+                          -H "Content-Type: application/json" \
+                          -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" \
+                          -H "X-Auth-Key: ${CLOUDFLARE_KEY}" \
+                          -w "HTTP_STATUS:%{http_code}" \
+                          "$@")
+
+    # Using an API token:
+    elif [ "$API_METHOD" -eq 2 ]; then
+      HTTP_RESPONSE=$(curl -sS "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE}/purge_cache" \
+                          -H "Content-Type: application/json" \
+                          -H "Authorization: Bearer ${CLOUDFLARE_TOKEN}" \
+                          -w "HTTP_STATUS:%{http_code}" \
+                          "$@")
+    fi
+
+
+    ######## Format response for a pretty command line output. ########
+
+    # Store result and HTTP status code separately to appropriately throw CI errors.
+    # https://gist.github.com/maxcnunes/9f77afdc32df354883df
+    HTTP_BODY=$(echo "${HTTP_RESPONSE}" | sed -E 's/HTTP_STATUS\:[0-9]{3}$//')
+    HTTP_STATUS=$(echo "${HTTP_RESPONSE}" | tr -d '\n' | sed -E 's/.*HTTP_STATUS:([0-9]{3})$/\1/')
+
+    # Fail pipeline and print errors if API doesn't return an OK status.
+    if [ "${HTTP_STATUS}" -eq "200" ]; then
+      echo "Successfully purged!"
+    else
+      echo "Purge failed. Stoping queue. API response was: "
+      echo "${HTTP_BODY}"
+      exit 1
+    fi
+  done
+
+  # Success exit
+  exit 0
 fi
 
 
 # If URL array is passed, only purge those. Otherwise, purge everything.
 if [ -n "$PURGE_URLS" ]; then
   set -- --data '{"files":'"${PURGE_URLS}"'}'
-elif [ -n "$JSON_PATHS" ]; then
-  set -- --data '{"files":'"${JSON_PATHS}"'}'
+# elif [ -n "$JSON_PATHS" ]; then
+#   set -- --data '{"files":'"${JSON_PATHS}"'}'
 else
   set -- --data '{"purge_everything":true}'
 fi
